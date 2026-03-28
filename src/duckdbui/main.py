@@ -4,6 +4,7 @@ import duckdb
 import json
 import csv
 import os
+import webbrowser
 from datetime import datetime
 
 try:
@@ -145,6 +146,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
                    command=self._create_db).pack(side="left", padx=(8, 4))
         ttk.Button(inner_h, text="↺", width=3,
                    command=self._refresh_db_list).pack(side="left")
+        ttk.Button(inner_h, text="？ 使い方", command=self._open_usage).pack(side="right", padx=4)
 
         # メインレイアウト
         container = tk.Frame(self, bg=C["bg"])
@@ -785,6 +787,13 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def _show_status(self, msg: str):
         self.result_info.config(text=msg)
         self.after(3000, lambda: self.result_info.config(text=""))
+
+    def _open_usage(self):
+        doc_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "documents", "usage.html"
+        )
+        webbrowser.open(f"file:///{doc_path.replace(os.sep, '/')}")
 
 
 def main():

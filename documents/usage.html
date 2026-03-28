@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuckDB SQL Editor - 使い方</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #d4d8f0;
+      line-height: 1.7;
+      padding: 40px 24px;
+    }
+    .container { max-width: 860px; margin: 0 auto; }
+    h1 {
+      font-size: 1.6rem;
+      color: #7c6af7;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    h1 span { font-size: 1.8rem; }
+    .subtitle { color: #6b7099; font-size: 0.9rem; margin-bottom: 40px; }
+    h2 {
+      font-size: 1.1rem;
+      color: #7c6af7;
+      margin: 40px 0 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #2e3250;
+    }
+    h3 { font-size: 0.95rem; color: #a9b1d6; margin: 24px 0 8px; }
+    p { margin-bottom: 12px; color: #b0b8d8; }
+    code {
+      background: #1c1f2e;
+      color: #7c6af7;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.88rem;
+    }
+    pre {
+      background: #13151f;
+      border: 1px solid #2e3250;
+      border-radius: 8px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin: 12px 0 20px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.88rem;
+      color: #a9b1d6;
+      line-height: 1.6;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #1c1f2e;
+      color: #7c6af7;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 1px solid #2e3250;
+    }
+    td {
+      padding: 9px 14px;
+      border-bottom: 1px solid #1c1f2e;
+      color: #b0b8d8;
+    }
+    tr:hover td { background: #1c1f2e; }
+    .kbd {
+      display: inline-block;
+      background: #252840;
+      border: 1px solid #2e3250;
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.85rem;
+      color: #d4d8f0;
+    }
+    .layout {
+      background: #13151f;
+      border: 1px solid #2e3250;
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-family: 'Consolas', monospace;
+      font-size: 0.82rem;
+      color: #6b7099;
+      margin: 12px 0 20px;
+      line-height: 1.8;
+    }
+    .layout .hl { color: #7c6af7; }
+    ul { padding-left: 20px; margin-bottom: 12px; }
+    li { color: #b0b8d8; margin-bottom: 4px; }
+    .tip {
+      background: #1c1f2e;
+      border-left: 3px solid #7c6af7;
+      padding: 10px 16px;
+      border-radius: 0 6px 6px 0;
+      margin: 12px 0;
+      font-size: 0.9rem;
+      color: #a9b1d6;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1><span>⬡</span> DuckDB SQL Editor</h1>
+  <p class="subtitle">使い方ガイド</p>
+
+  <h2>起動方法</h2>
+  <pre>uv run duckdbui</pre>
+
+  <h2>画面構成</h2>
+  <pre>┌─────────────────────────────────────────────────────────────┐
+│  ⬡ DuckDB SQL Editor   DB [(インメモリ) ▼]  [新規作成] [↺]  │  ← ヘッダー
+├──────────────┬──────────────────────────┬───────────────────┤
+│              │  SQLエディタ             │                   │
+│  TABLES      ├──────────────────────────┤  SAVED QUERIES    │
+│              │  [▶ 実行] [保存] [クリア]│                   │
+│  テーブル/   │  エクスポート: [CSV]...  │  保存済みSQL一覧  │
+│  VIEW一覧    ├──────────────────────────┤                   │
+│              │  ページネーション (上)   │                   │
+│              │  結果テーブル            │                   │
+│              │  ページネーション (下)   │                   │
+└──────────────┴──────────────────────────┴───────────────────┘</pre>
+
+  <h2>基本的な使い方</h2>
+
+  <h3>1. ファイルを読み込む</h3>
+  <p>左サイドバーの <code>TABLES</code> エリアに Parquet / CSV / JSON ファイルをドラッグ&amp;ドロップします。</p>
+  <ul>
+    <li>複数ファイルを同時にドロップできます</li>
+    <li>ファイルはコピーされず、元ファイルへの参照（VIEW）として登録されます</li>
+    <li>Windowsエクスプローラーからのドロップに対応しています</li>
+  </ul>
+
+  <h3>2. SQLを実行する</h3>
+  <p>エディタにSQLを入力して実行します。</p>
+  <pre>SELECT * FROM your_file</pre>
+  <p>実行方法：<span class="kbd">Ctrl+Enter</span> または「▶ 実行」ボタン</p>
+  <div class="tip">テーブル名をダブルクリックすると <code>SELECT * FROM テーブル名</code> が自動入力されて即実行されます。</div>
+
+  <h3>3. テーブル名をエディタに挿入する</h3>
+  <p>テーブル一覧のテーブル名をSQLエディタにドラッグ&amp;ドロップすると、カーソル位置にテーブル名が挿入されます。</p>
+
+  <h3>4. 結果を確認する</h3>
+  <p>クエリ結果は下部のテーブルに表示されます。1ページ100件表示で、<code>◀</code> / <code>▶</code> ボタンでページ移動できます。</p>
+
+  <h3>5. 結果をエクスポートする</h3>
+  <p>クエリ実行後、ボタンバー右側のエクスポートボタンが有効になります。</p>
+  <table>
+    <tr><th>ボタン</th><th>形式</th></tr>
+    <tr><td>CSV</td><td>UTF-8 BOM付きCSV</td></tr>
+    <tr><td>JSON</td><td>JSON配列</td></tr>
+    <tr><td>Parquet</td><td>Parquet形式</td></tr>
+  </table>
+  <p>保存ダイアログの初期ファイル名は <code>20260328_161800.csv</code> のような日時形式です。</p>
+
+  <h2>DBファイルの管理</h2>
+
+  <h3>新しいDBを作成する</h3>
+  <ol style="padding-left:20px; margin-bottom:12px;">
+    <li style="color:#b0b8d8; margin-bottom:4px;">ヘッダーの「新規作成」ボタンをクリック</li>
+    <li style="color:#b0b8d8; margin-bottom:4px;">DBファイル名を入力（<code>.duckdb</code> は自動付与）</li>
+    <li style="color:#b0b8d8; margin-bottom:4px;"><code>db-files/</code> フォルダにファイルが作成され、自動的に切り替わります</li>
+  </ol>
+
+  <h3>DBを切り替える</h3>
+  <p>ヘッダーのドロップダウンからDBを選択します。切り替えると、テーブル一覧と保存済みクエリがそのDBの内容に更新されます。</p>
+
+  <h3>インメモリモード</h3>
+  <p>デフォルトの <code>(インメモリ)</code> はアプリを閉じるとデータが消えます。一時的な分析作業に使用してください。</p>
+
+  <h2>クエリの保存と管理</h2>
+
+  <h3>クエリを保存する</h3>
+  <p>エディタにSQLを入力して「保存」ボタンをクリックすると、右サイドバーの <code>SAVED QUERIES</code> に追加されます。</p>
+
+  <h3>保存済みクエリを使う</h3>
+  <table>
+    <tr><th>操作</th><th>動作</th></tr>
+    <tr><td>クリック</td><td>エディタにSQLを展開</td></tr>
+    <tr><td>ホバー</td><td>SQL全文をツールチップで確認</td></tr>
+    <tr><td>ドラッグ</td><td>上下にドラッグして順序を並び替え</td></tr>
+    <tr><td>✕ボタン</td><td>クエリを削除</td></tr>
+  </table>
+
+  <h3>保存場所</h3>
+  <p>保存済みクエリはDBごとに <code>db-files/</code> フォルダに保存されます。</p>
+  <pre>db-files/
+├── mydata.duckdb               # DBファイル
+├── mydata.duckdb.queries.json  # mydata用の保存クエリ
+└── _inmemory.queries.json      # インメモリ用の保存クエリ</pre>
+
+  <h2>テーブル情報を確認する</h2>
+  <p>テーブル一覧のテーブル名にマウスをホバーするとツールチップが表示されます。</p>
+  <ul>
+    <li><strong style="color:#d4d8f0;">VIEW</strong>：SQL定義（<code>CREATE VIEW ...</code>）</li>
+    <li><strong style="color:#d4d8f0;">テーブル</strong>：カラム名と型の一覧</li>
+  </ul>
+
+  <h2>ショートカット</h2>
+  <table>
+    <tr><th>キー</th><th>動作</th></tr>
+    <tr><td><span class="kbd">Ctrl+Enter</span></td><td>クエリ実行</td></tr>
+  </table>
+
+</div>
+</body>
+</html>
