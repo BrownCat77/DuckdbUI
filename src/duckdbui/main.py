@@ -68,110 +68,152 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     # ------------------------------------------------------------------ UI --
     def _build_ui(self):
+        # カラーパレット
+        C = {
+            "bg":        "#0f1117",   # アプリ背景
+            "surface":   "#1c1f2e",   # サイドバー・ツールバー
+            "surface2":  "#252840",   # ホバー
+            "border":    "#2e3250",   # 区切り線
+            "editor":    "#13151f",   # エディタ背景
+            "accent":    "#7c6af7",   # アクセント（紫）
+            "accent2":   "#e05c7a",   # 実行ボタン（ピンク）
+            "fg":        "#d4d8f0",   # 通常テキスト
+            "fg2":       "#6b7099",   # サブテキスト
+            "danger":    "#e05c7a",   # 削除
+            "row_hover": "#1e2235",
+        }
+        self._C = C
+        self.configure(bg=C["bg"])
+
         style = ttk.Style(self)
         style.theme_use("clam")
-        style.configure(".", background="#1a1a2e", foreground="#e0e0e0", fieldbackground="#0f3460")
-        style.configure("TButton", background="#0f3460", foreground="#e0e0e0", borderwidth=0, padding=6)
-        style.map("TButton", background=[("active", "#1a4a8a")])
-        style.configure("Run.TButton", background="#e94560", foreground="#ffffff")
-        style.map("Run.TButton", background=[("active", "#c73652")])
-        style.configure("TCombobox", fieldbackground="#0f3460", background="#0f3460", foreground="#e0e0e0")
-        style.configure("Treeview", background="#0d1117", foreground="#c9d1d9",
-                        fieldbackground="#0d1117", rowheight=24)
-        style.configure("Treeview.Heading", background="#16213e", foreground="#e94560")
-        style.map("Treeview", background=[("selected", "#0f3460")])
-        style.configure("TSeparator", background="#0f3460")
+        style.configure(".", background=C["bg"], foreground=C["fg"],
+                        fieldbackground=C["surface"], font=("Segoe UI", 9))
+        style.configure("TButton", background=C["surface"], foreground=C["fg"],
+                        borderwidth=0, padding=(8, 5), relief="flat")
+        style.map("TButton",
+                  background=[("active", C["surface2"]), ("disabled", C["surface"])],
+                  foreground=[("disabled", C["fg2"])])
+        style.configure("Accent.TButton", background=C["accent"], foreground="#ffffff", padding=(8, 5))
+        style.map("Accent.TButton", background=[("active", "#6a59e0")])
+        style.configure("Run.TButton", background=C["accent2"], foreground="#ffffff",
+                        font=("Segoe UI", 9, "bold"), padding=(10, 5))
+        style.map("Run.TButton", background=[("active", "#c44d6a")])
+        style.configure("Treeview", background=C["editor"], foreground=C["fg"],
+                        fieldbackground=C["editor"], rowheight=26, borderwidth=0)
+        style.configure("Treeview.Heading", background=C["surface"], foreground=C["accent"],
+                        borderwidth=0, relief="flat", padding=(8, 6))
+        style.map("Treeview",
+                  background=[("selected", C["surface2"])],
+                  foreground=[("selected", C["fg"])])
+        style.configure("TScrollbar", background=C["surface"], troughcolor=C["bg"],
+                        borderwidth=0, arrowsize=12)
+        style.configure("TCombobox", fieldbackground=C["surface"], background=C["surface"],
+                        foreground=C["fg"], borderwidth=0)
 
-        # --- Top toolbar ---
-        toolbar = tk.Frame(self, bg="#16213e", pady=6)
-        toolbar.pack(fill="x")
-        tk.Label(toolbar, text="DuckDB SQL Editor", bg="#16213e", fg="#e94560",
-                 font=("Segoe UI", 13, "bold")).pack(side="left", padx=14)
+        # ヘッダー
+        header = tk.Frame(self, bg=C["surface"], pady=0)
+        header.pack(fill="x")
+        tk.Frame(header, bg=C["border"], height=1).pack(fill="x", side="bottom")
+
+        inner_h = tk.Frame(header, bg=C["surface"])
+        inner_h.pack(fill="x", padx=14, pady=8)
+
+        tk.Label(inner_h, text="⬡ DuckDB SQL Editor", bg=C["surface"], fg=C["accent"],
+                 font=("Segoe UI", 11, "bold")).pack(side="left")
 
         # DB選択
-        tk.Label(toolbar, text="DB:", bg="#16213e", fg="#aaa",
-                 font=("Segoe UI", 9)).pack(side="left", padx=(16, 4))
+        tk.Frame(inner_h, bg=C["border"], width=1).pack(side="left", fill="y", padx=16)
+        tk.Label(inner_h, text="DB", bg=C["surface"], fg=C["fg2"],
+                 font=("Segoe UI", 8)).pack(side="left", padx=(0, 6))
         self.db_var = tk.StringVar(value="(インメモリ)")
-        self.db_combo = tk.OptionMenu(toolbar, self.db_var, "(インメモリ)", command=self._on_db_select)
-        self.db_combo.config(bg="#0f3460", fg="#e0e0e0", activebackground="#1a4a8a",
-                             activeforeground="#e0e0e0", relief="flat", borderwidth=0,
-                             highlightthickness=0, font=("Segoe UI", 9))
-        self.db_combo["menu"].config(bg="#0f3460", fg="#e0e0e0")
+        self.db_combo = tk.OptionMenu(inner_h, self.db_var, "(インメモリ)", command=self._on_db_select)
+        self.db_combo.config(bg=C["surface2"], fg=C["fg"], activebackground=C["border"],
+                             activeforeground=C["fg"], relief="flat", borderwidth=0,
+                             highlightthickness=0, font=("Segoe UI", 9), padx=8, pady=4)
+        self.db_combo["menu"].config(bg=C["surface2"], fg=C["fg"],
+                                     activebackground=C["accent"], activeforeground="#fff",
+                                     borderwidth=0, font=("Segoe UI", 9))
         self.db_combo.pack(side="left")
-        ttk.Button(toolbar, text="新規作成", command=self._create_db).pack(side="left", padx=6)
-        ttk.Button(toolbar, text="↺", width=3, command=self._refresh_db_list).pack(side="left")
+        ttk.Button(inner_h, text="新規作成", style="Accent.TButton",
+                   command=self._create_db).pack(side="left", padx=(8, 4))
+        ttk.Button(inner_h, text="↺", width=3,
+                   command=self._refresh_db_list).pack(side="left")
 
-        # --- Main layout: 左固定 / 中央伸縮 / 右固定 ---
-        container = tk.Frame(self, bg="#1a1a2e")
+        # メインレイアウト
+        container = tk.Frame(self, bg=C["bg"])
         container.pack(fill="both", expand=True)
-        container.columnconfigure(1, weight=1)  # 中央のみ伸縮
+        container.columnconfigure(1, weight=1)
         container.rowconfigure(0, weight=1)
 
-        # 左サイドバー: ファイル/テーブル
-        sidebar = tk.Frame(container, bg="#16213e", width=200)
+        # 左サイドバー
+        sidebar = tk.Frame(container, bg=C["surface"], width=210)
         sidebar.grid(row=0, column=0, sticky="ns")
-        sidebar.pack_propagate(False)  # 幅を固定
+        sidebar.pack_propagate(False)
+        tk.Frame(container, bg=C["border"], width=1).grid(row=0, column=0, sticky="nse")
 
-        tk.Frame(container, bg="#0f3460", width=1).grid(row=0, column=0, sticky="nse")
+        tk.Label(sidebar, text="TABLES", bg=C["surface"], fg=C["fg2"],
+                 font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=12, pady=(14, 4))
 
-        tk.Label(sidebar, text="テーブル一覧 (ファイルをドロップ)", bg="#16213e", fg="#888",
-                 font=("Segoe UI", 8)).pack(anchor="w", padx=10, pady=(10, 2))
-
-        # スクロール可能なテーブル一覧フレーム
-        table_list_outer = tk.Frame(sidebar, bg="#0d1117")
-        table_list_outer.pack(fill="both", expand=True, padx=8, pady=(0, 4))
+        table_list_outer = tk.Frame(sidebar, bg=C["editor"])
+        table_list_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         table_vsb = ttk.Scrollbar(table_list_outer, orient="vertical")
         table_vsb.pack(side="right", fill="y")
-        self.table_canvas = tk.Canvas(table_list_outer, bg="#0d1117", bd=0,
+        self.table_canvas = tk.Canvas(table_list_outer, bg=C["editor"], bd=0,
                                       highlightthickness=0, yscrollcommand=table_vsb.set)
         self.table_canvas.pack(side="left", fill="both", expand=True)
         table_vsb.config(command=self.table_canvas.yview)
-        self.table_inner = tk.Frame(self.table_canvas, bg="#0d1117")
+        self.table_inner = tk.Frame(self.table_canvas, bg=C["editor"])
         self._table_inner_id = self.table_canvas.create_window((0, 0), window=self.table_inner, anchor="nw")
         self.table_inner.bind("<Configure>", lambda e: self.table_canvas.configure(scrollregion=self.table_canvas.bbox("all")))
         self.table_canvas.bind("<Configure>", lambda e: self.table_canvas.itemconfig(self._table_inner_id, width=e.width))
 
-        # 中央: エディタ + 結果
-        right = tk.Frame(container, bg="#1a1a2e")
+        # 中央
+        right = tk.Frame(container, bg=C["bg"])
         right.grid(row=0, column=1, sticky="nsew")
 
-        # SQL editor
-        editor_frame = tk.Frame(right, bg="#0d1117")
+        # SQLエディタ
+        editor_frame = tk.Frame(right, bg=C["editor"])
         editor_frame.pack(fill="x")
-        self.sql_editor = tk.Text(editor_frame, height=9, bg="#0d1117", fg="#c9d1d9",
-                                  insertbackground="#e0e0e0", font=("Consolas", 10),
-                                  relief="flat", bd=0, padx=10, pady=8, wrap="none")
+        tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
+        self.sql_editor = tk.Text(editor_frame, height=9, bg=C["editor"], fg="#a9b1d6",
+                                  insertbackground=C["fg"], font=("Consolas", 10),
+                                  relief="flat", bd=0, padx=14, pady=10, wrap="none",
+                                  selectbackground=C["surface2"], selectforeground=C["fg"])
         self.sql_editor.pack(fill="both", expand=True)
-        self.sql_editor.insert("1.0", "SELECT * FROM your_table LIMIT 100")
+        self.sql_editor.insert("1.0", "SELECT * FROM your_table")
         self.sql_editor.bind("<Control-Return>", lambda e: self._run_query())
+        tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
 
-        # SQL下部ボタンバー（実行・保存・クリア / エクスポート）
-        sql_btnbar = tk.Frame(right, bg="#16213e", pady=4, padx=8)
+        # ボタンバー
+        sql_btnbar = tk.Frame(right, bg=C["surface"], pady=6, padx=10)
         sql_btnbar.pack(fill="x")
-        ttk.Button(sql_btnbar, text="▶ 実行  Ctrl+Enter", style="Run.TButton",
-                   command=self._run_query).pack(side="left", padx=(0, 4))
+        ttk.Button(sql_btnbar, text="▶  実行   Ctrl+Enter", style="Run.TButton",
+                   command=self._run_query).pack(side="left", padx=(0, 6))
         ttk.Button(sql_btnbar, text="保存", command=self._save_query).pack(side="left", padx=2)
         ttk.Button(sql_btnbar, text="クリア", command=self._clear_editor).pack(side="left", padx=2)
-        self.btn_export_parquet = ttk.Button(sql_btnbar, text="Parquet エクスポート", command=self._export_parquet, state="disabled")
+        self.btn_export_parquet = ttk.Button(sql_btnbar, text="Parquet", command=self._export_parquet, state="disabled")
         self.btn_export_parquet.pack(side="right", padx=2)
-        self.btn_export_json = ttk.Button(sql_btnbar, text="JSON エクスポート", command=self._export_json, state="disabled")
+        self.btn_export_json = ttk.Button(sql_btnbar, text="JSON", command=self._export_json, state="disabled")
         self.btn_export_json.pack(side="right", padx=2)
-        self.btn_export_csv = ttk.Button(sql_btnbar, text="CSV エクスポート", command=self._export_csv, state="disabled")
+        self.btn_export_csv = ttk.Button(sql_btnbar, text="CSV", command=self._export_csv, state="disabled")
         self.btn_export_csv.pack(side="right", padx=2)
+        tk.Label(sql_btnbar, text="エクスポート:", bg=C["surface"], fg=C["fg2"],
+                 font=("Segoe UI", 8)).pack(side="right", padx=(0, 4))
+        tk.Frame(right, bg=C["border"], height=1).pack(fill="x")
 
-        # Result info bar (ステータス表示のみ、件数はページネーションに表示)
-        rtoolbar = tk.Frame(right, bg="#16213e", pady=2, padx=8)
-        rtoolbar.pack(fill="x")
-        self.result_info = tk.Label(rtoolbar, text="", bg="#16213e", fg="#888", font=("Segoe UI", 9))
-        self.result_info.pack(side="left")
+        # ステータス
+        self.result_info = tk.Label(right, text="", bg=C["bg"], fg=C["fg2"],
+                                    font=("Segoe UI", 8), anchor="w")
+        self.result_info.pack(fill="x", padx=12, pady=(4, 0))
 
-        # Result table
-        result_frame = tk.Frame(right, bg="#0d1117")
+        # 結果テーブル
+        result_frame = tk.Frame(right, bg=C["bg"])
         result_frame.pack(fill="both", expand=True)
 
-        # ページネーション (上)
-        self.page_bar_top = tk.Frame(result_frame, bg="#16213e")
+        self.page_bar_top = tk.Frame(result_frame, bg=C["surface"])
         self.page_bar_top.pack(fill="x")
+        tk.Frame(result_frame, bg=C["border"], height=1).pack(fill="x")
         self._build_page_bar(self.page_bar_top)
 
         self.tree = ttk.Treeview(result_frame, show="headings")
@@ -182,30 +224,29 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         hsb.pack(side="bottom", fill="x")
         self.tree.pack(fill="both", expand=True)
 
-        # ページネーション (下)
-        self.page_bar_bottom = tk.Frame(result_frame, bg="#16213e")
+        tk.Frame(result_frame, bg=C["border"], height=1).pack(fill="x")
+        self.page_bar_bottom = tk.Frame(result_frame, bg=C["surface"])
         self.page_bar_bottom.pack(fill="x")
         self._build_page_bar(self.page_bar_bottom)
 
-        # 右サイドバー: 保存クエリ一覧
-        qsidebar = tk.Frame(container, bg="#16213e", width=220)
+        # 右サイドバー
+        qsidebar = tk.Frame(container, bg=C["surface"], width=220)
         qsidebar.grid(row=0, column=2, sticky="ns")
-        qsidebar.pack_propagate(False)  # 幅を固定
+        qsidebar.pack_propagate(False)
+        tk.Frame(container, bg=C["border"], width=1).grid(row=0, column=2, sticky="nsw")
 
-        tk.Frame(container, bg="#0f3460", width=1).grid(row=0, column=2, sticky="nsw")
+        tk.Label(qsidebar, text="SAVED QUERIES", bg=C["surface"], fg=C["fg2"],
+                 font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=12, pady=(14, 4))
 
-        tk.Label(qsidebar, text="保存済みクエリ", bg="#16213e", fg="#888",
-                 font=("Segoe UI", 8)).pack(anchor="w", padx=10, pady=(10, 2))
-
-        query_list_outer = tk.Frame(qsidebar, bg="#0d1117")
+        query_list_outer = tk.Frame(qsidebar, bg=C["editor"])
         query_list_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         query_vsb = ttk.Scrollbar(query_list_outer, orient="vertical")
         query_vsb.pack(side="right", fill="y")
-        self.query_canvas = tk.Canvas(query_list_outer, bg="#0d1117", bd=0,
+        self.query_canvas = tk.Canvas(query_list_outer, bg=C["editor"], bd=0,
                                       highlightthickness=0, yscrollcommand=query_vsb.set)
         self.query_canvas.pack(side="left", fill="both", expand=True)
         query_vsb.config(command=self.query_canvas.yview)
-        self.query_inner = tk.Frame(self.query_canvas, bg="#0d1117")
+        self.query_inner = tk.Frame(self.query_canvas, bg=C["editor"])
         self._query_inner_id = self.query_canvas.create_window((0, 0), window=self.query_inner, anchor="nw")
         self.query_inner.bind("<Configure>", lambda e: self.query_canvas.configure(scrollregion=self.query_canvas.bbox("all")))
         self.query_canvas.bind("<Configure>", lambda e: self.query_canvas.itemconfig(self._query_inner_id, width=e.width))
@@ -296,19 +337,20 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self._add_table_row(name)
 
     def _add_table_row(self, name: str):
-        row = tk.Frame(self.table_inner, bg="#0d1117", cursor="hand2")
+        C = self._C
+        row = tk.Frame(self.table_inner, bg=C["editor"], cursor="hand2")
         row.pack(fill="x")
-        lbl = tk.Label(row, text=name, bg="#0d1117", fg="#ccc",
-                       font=("Segoe UI", 9), anchor="w", padx=4)
+        lbl = tk.Label(row, text=name, bg=C["editor"], fg=C["fg"],
+                       font=("Segoe UI", 9), anchor="w", padx=10)
         lbl.pack(side="left", fill="x", expand=True)
-        btn = tk.Label(row, text="✕", bg="#0d1117", fg="#555",
-                       font=("Segoe UI", 9), padx=4, cursor="hand2")
+        btn = tk.Label(row, text="✕", bg=C["editor"], fg=C["fg2"],
+                       font=("Segoe UI", 9), padx=6, cursor="hand2")
         btn.pack(side="right")
 
         def on_enter(e, r=row, l=lbl, b=btn):
-            r.config(bg="#16213e"); l.config(bg="#16213e"); b.config(bg="#16213e")
+            r.config(bg=C["row_hover"]); l.config(bg=C["row_hover"]); b.config(bg=C["row_hover"])
         def on_leave(e, r=row, l=lbl, b=btn):
-            r.config(bg="#0d1117"); l.config(bg="#0d1117"); b.config(bg="#0d1117")
+            r.config(bg=C["editor"]); l.config(bg=C["editor"]); b.config(bg=C["editor"])
             self._hide_tooltip()
 
         for w in (row, lbl):
@@ -317,8 +359,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             w.bind("<Leave>", on_leave)
             w.bind("<Motion>", lambda e, n=name: self._on_table_hover_name(e, n))
 
-        btn.bind("<Enter>", lambda e: btn.config(fg="#e94560"))
-        btn.bind("<Leave>", lambda e: btn.config(fg="#555"))
+        btn.bind("<Enter>", lambda e: btn.config(fg=C["danger"]))
+        btn.bind("<Leave>", lambda e: btn.config(fg=C["fg2"]))
         btn.bind("<Button-1>", lambda e, n=name: self._remove_table_by_name(n))
 
     def _insert_select(self, name: str):
@@ -494,20 +536,21 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self._add_query_row(idx, sql)
 
     def _add_query_row(self, idx: int, sql: str):
+        C = self._C
         label_text = sql.strip().replace("\n", " ")[:50]
-        row = tk.Frame(self.query_inner, bg="#0d1117", cursor="hand2")
+        row = tk.Frame(self.query_inner, bg=C["editor"], cursor="hand2")
         row.pack(fill="x")
-        btn = tk.Label(row, text="✕", bg="#0d1117", fg="#555",
-                       font=("Segoe UI", 9), padx=4, cursor="hand2")
+        btn = tk.Label(row, text="✕", bg=C["editor"], fg=C["fg2"],
+                       font=("Segoe UI", 9), padx=6, cursor="hand2")
         btn.pack(side="right")
-        lbl = tk.Label(row, text=label_text, bg="#0d1117", fg="#ccc",
-                       font=("Segoe UI", 9), anchor="w", padx=4)
+        lbl = tk.Label(row, text=label_text, bg=C["editor"], fg=C["fg"],
+                       font=("Segoe UI", 9), anchor="w", padx=6)
         lbl.pack(side="left", fill="x", expand=True)
 
         def on_enter(e, r=row, l=lbl, b=btn):
-            r.config(bg="#16213e"); l.config(bg="#16213e"); b.config(bg="#16213e")
+            r.config(bg=C["row_hover"]); l.config(bg=C["row_hover"]); b.config(bg=C["row_hover"])
         def on_leave(e, r=row, l=lbl, b=btn):
-            r.config(bg="#0d1117"); l.config(bg="#0d1117"); b.config(bg="#0d1117")
+            r.config(bg=C["editor"]); l.config(bg=C["editor"]); b.config(bg=C["editor"])
             self._hide_tooltip()
 
         for w in (row, lbl):
@@ -520,8 +563,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             w.bind("<B1-Motion>", lambda e, i=idx: self._on_query_drag_motion(e, i))
             w.bind("<ButtonRelease-1>", lambda e, i=idx: self._on_query_drag_release(e, i))
 
-        btn.bind("<Enter>", lambda e: btn.config(fg="#e94560"))
-        btn.bind("<Leave>", lambda e: btn.config(fg="#555"))
+        btn.bind("<Enter>", lambda e: btn.config(fg=C["danger"]))
+        btn.bind("<Leave>", lambda e: btn.config(fg=C["fg2"]))
         btn.bind("<Button-1>", lambda e, i=idx: self._delete_query_by_idx(i))
 
     def _load_query_by_idx(self, idx: int):
@@ -573,15 +616,16 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     # --------------------------------------------------------- Helpers -----
     def _build_page_bar(self, parent: tk.Frame):
-        """ページネーションバーのウィジェットを生成して返す"""
-        outer = tk.Frame(parent, bg="#16213e")
-        outer.pack(fill="x", pady=2)
-        bar = tk.Frame(outer, bg="#16213e")
-        bar.pack(anchor="center")  # 中央寄せ
+        C = self._C
+        outer = tk.Frame(parent, bg=C["surface"])
+        outer.pack(fill="x", pady=4)
+        bar = tk.Frame(outer, bg=C["surface"])
+        bar.pack(anchor="center")
         btn_prev = ttk.Button(bar, text="◀", width=3, command=self._prev_page)
         btn_prev.pack(side="left")
-        lbl = tk.Label(bar, text="", bg="#16213e", fg="#aaa", font=("Segoe UI", 8), width=28)
-        lbl.pack(side="left", padx=6)
+        lbl = tk.Label(bar, text="", bg=C["surface"], fg=C["fg2"],
+                       font=("Segoe UI", 8), width=30)
+        lbl.pack(side="left", padx=8)
         btn_next = ttk.Button(bar, text="▶", width=3, command=self._next_page)
         btn_next.pack(side="left")
         parent._btn_prev = btn_prev
@@ -647,14 +691,15 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     def _show_tooltip_for(self, widget: tk.Widget, event, text: str):
         self._hide_tooltip()
+        C = self._C
         x = widget.winfo_rootx() - 10
         y = event.y_root + 10
         tip = tk.Toplevel(self)
         tip.wm_overrideredirect(True)
         tip.wm_geometry(f"+{x}+{y}")
-        lbl = tk.Label(tip, text=text, bg="#0f3460", fg="#e0e0e0",
+        lbl = tk.Label(tip, text=text, bg=C["surface2"], fg=C["fg"],
                        font=("Consolas", 8), justify="left",
-                       relief="solid", bd=1, padx=6, pady=4, wraplength=360)
+                       relief="flat", bd=0, padx=10, pady=6, wraplength=360)
         lbl.pack()
         self._tooltip = tip
 
