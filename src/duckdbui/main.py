@@ -59,6 +59,9 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.last_result: tuple[list, list] | None = None  # (columns, rows)
         self.saved_queries: list = load_saved_queries(None)  # 初期はインメモリ用
         self._drag_query_idx: int | None = None
+        self._drag_ghost: tk.Toplevel | None = None
+        self._drag_table_name: str = ""
+        self._drag_start_pos: tuple = (0, 0)
         self._page = 0
         self._page_size = 100
         self._tooltip: tk.Toplevel | None = None
@@ -181,7 +184,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
                                   relief="flat", bd=0, padx=14, pady=10, wrap="none",
                                   selectbackground=C["surface2"], selectforeground=C["fg"])
         self.sql_editor.pack(fill="both", expand=True)
-        self.sql_editor.insert("1.0", "SELECT * FROM your_table")
+        self.sql_editor.insert("1.0", "SELECT i AS num FROM range(1, 10) AS sample(i)")
         self.sql_editor.bind("<Control-Return>", lambda e: self._run_query())
         tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
 
@@ -358,6 +361,9 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             w.bind("<Enter>", on_enter)
             w.bind("<Leave>", on_leave)
             w.bind("<Motion>", lambda e, n=name: self._on_table_hover_name(e, n))
+            w.bind("<ButtonPress-1>", lambda e, n=name: self._on_table_drag_start(e, n))
+            w.bind("<B1-Motion>", lambda e, n=name: self._on_table_drag_motion(e, n))
+            w.bind("<ButtonRelease-1>", lambda e, n=name: self._on_table_drag_release(e, n))
 
         btn.bind("<Enter>", lambda e: btn.config(fg=C["danger"]))
         btn.bind("<Leave>", lambda e: btn.config(fg=C["fg2"]))
@@ -367,6 +373,59 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.sql_editor.delete("1.0", "end")
         self.sql_editor.insert("1.0", f"SELECT * FROM {name}")
         self._run_query()
+
+    # テーブル名 → SQLエディタ ドラッグ&ドロップ
+    def _on_table_drag_start(self, event, name: str):
+        self._drag_table_name = name
+        self._drag_start_pos = (event.x_root, event.y_root)
+        self._drag_ghost = None
+
+    def _on_table_drag_motion(self, event, name: str):
+        # 5px以上動いたらゴースト表示
+        if self._drag_ghost is None:
+            dx = abs(event.x_root - self._drag_start_pos[0])
+            dy = abs(event.y_root - self._drag_start_pos[1])
+            if dx < 5 and dy < 5:
+                return
+            C = self._C
+            self._drag_ghost = tk.Toplevel(self)
+            self._drag_ghost.wm_overrideredirect(True)
+            self._drag_ghost.attributes("-alpha", 0.8)
+            tk.Label(self._drag_ghost, text=f" {name} ", bg=C["accent"],
+                     fg="#fff", font=("Segoe UI", 9, "bold"),
+                     padx=6, pady=3).pack()
+        self._drag_ghost.wm_geometry(f"+{event.x_root + 12}+{event.y_root + 4}")
+
+        # SQLエディタ上にいるかハイライト
+        ex = self.sql_editor.winfo_rootx()
+        ey = self.sql_editor.winfo_rooty()
+        ew = self.sql_editor.winfo_width()
+        eh = self.sql_editor.winfo_height()
+        if ex <= event.x_root <= ex + ew and ey <= event.y_root <= ey + eh:
+            self.sql_editor.config(highlightthickness=2,
+                                   highlightbackground=self._C["accent"])
+        else:
+            self.sql_editor.config(highlightthickness=0)
+
+    def _on_table_drag_release(self, event, name: str):
+        # ゴースト削除
+        if self._drag_ghost:
+            self._drag_ghost.destroy()
+            self._drag_ghost = None
+        self.sql_editor.config(highlightthickness=0)
+
+        # SQLエディタ上でリリースされたか判定
+        ex = self.sql_editor.winfo_rootx()
+        ey = self.sql_editor.winfo_rooty()
+        ew = self.sql_editor.winfo_width()
+        eh = self.sql_editor.winfo_height()
+        if ex <= event.x_root <= ex + ew and ey <= event.y_root <= ey + eh:
+            # ドロップ位置のテキストインデックスを計算して挿入
+            lx = event.x_root - ex
+            ly = event.y_root - ey
+            idx = self.sql_editor.index(f"@{lx},{ly}")
+            self.sql_editor.insert(idx, name)
+            self.sql_editor.focus_set()
 
     def _on_table_double_click(self, _event):
         pass
