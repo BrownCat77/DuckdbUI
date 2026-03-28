@@ -225,6 +225,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self._build_page_bar(self.page_bar_top)
 
         self.tree = ttk.Treeview(result_frame, show="headings")
+        self.tree.bind("<Button-3>", self._on_tree_right_click)
+        self.tree.bind("<Control-c>", self._on_tree_copy)
         vsb = ttk.Scrollbar(result_frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(result_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
@@ -784,7 +786,55 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self._tooltip.destroy()
             self._tooltip = None
 
+    def _on_tree_copy(self, _event=None):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        lines = ["\t".join(str(v) for v in self.tree.item(row, "values")) for row in selected]
+        self._copy_to_clipboard("\n".join(lines))
+
+    def _on_tree_right_click(self, event):
+        # クリック位置の行・列を特定
+        row_id = self.tree.identify_row(event.y)
+        col_id = self.tree.identify_column(event.x)
+        if not row_id:
+            return
+
+        # クリックした行を選択状態にする
+        self.tree.selection_set(row_id)
+
+        # 列インデックス (#1, #2, ...) → 0始まりに変換
+        col_idx = int(col_id.replace("#", "")) - 1
+        columns = self.tree["columns"]
+        values = self.tree.item(row_id, "values")
+
+        cell_val = values[col_idx] if 0 <= col_idx < len(values) else ""
+        col_name = columns[col_idx] if 0 <= col_idx < len(columns) else ""
+        record_val = "\t".join(str(v) for v in values)
+
+        C = self._C
+        menu = tk.Menu(self, tearoff=0,
+                       bg=C["surface2"], fg=C["fg"],
+                       activebackground=C["accent"], activeforeground="#fff",
+                       borderwidth=0, font=("Segoe UI", 9))
+        menu.add_command(
+            label=f"セルをコピー  [{col_name}: {str(cell_val)[:30]}]",
+            command=lambda: self._copy_to_clipboard(str(cell_val))
+        )
+        menu.add_command(
+            label="レコードをコピー (タブ区切り)",
+            command=lambda: self._copy_to_clipboard(record_val)
+        )
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _copy_to_clipboard(self, text: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self._show_status("クリップボードにコピーしました")
+
     def _show_status(self, msg: str):
+        self.result_info.config(text=msg)
+        self.after(3000, lambda: self.result_info.config(text=""))
         self.result_info.config(text=msg)
         self.after(3000, lambda: self.result_info.config(text=""))
 
