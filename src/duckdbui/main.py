@@ -106,6 +106,14 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         style.configure("Run.TButton", background=C["accent2"], foreground="#ffffff",
                         font=("Segoe UI", 9, "bold"), padding=(10, 5))
         style.map("Run.TButton", background=[("active", "#c44d6a")])
+        style.configure("Action.TButton", background=C["surface2"], foreground=C["fg"],
+                        borderwidth=1, padding=(8, 5), relief="groove")
+        style.map("Action.TButton", background=[("active", "#2e3250"), ("disabled", C["surface"])],
+                  foreground=[("disabled", C["fg2"])])
+        style.configure("Export.TButton", background="#1a2a1a", foreground="#7ec87e",
+                        borderwidth=1, padding=(8, 5), relief="groove")
+        style.map("Export.TButton", background=[("active", "#223322"), ("disabled", C["surface"])],
+                  foreground=[("disabled", C["fg2"])])
         style.configure("Treeview", background=C["editor"], foreground=C["fg"],
                         fieldbackground=C["editor"], rowheight=26, borderwidth=0)
         style.configure("Treeview.Heading", background=C["surface"], foreground=C["accent"],
@@ -198,13 +206,18 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         sql_btnbar.pack(fill="x")
         ttk.Button(sql_btnbar, text="▶  実行   Ctrl+Enter", style="Run.TButton",
                    command=self._run_query).pack(side="left", padx=(0, 6))
-        ttk.Button(sql_btnbar, text="保存", command=self._save_query).pack(side="left", padx=2)
-        ttk.Button(sql_btnbar, text="クリア", command=self._clear_editor).pack(side="left", padx=2)
-        self.btn_export_parquet = ttk.Button(sql_btnbar, text="Parquet", command=self._export_parquet, state="disabled")
+        ttk.Button(sql_btnbar, text="💾 保存", style="Action.TButton",
+                   command=self._save_query).pack(side="left", padx=2)
+        ttk.Button(sql_btnbar, text="🗑 クリア", style="Action.TButton",
+                   command=self._clear_editor).pack(side="left", padx=2)
+        self.btn_export_parquet = ttk.Button(sql_btnbar, text="Parquet", style="Export.TButton",
+                                             command=self._export_parquet, state="disabled")
         self.btn_export_parquet.pack(side="right", padx=2)
-        self.btn_export_json = ttk.Button(sql_btnbar, text="JSON", command=self._export_json, state="disabled")
+        self.btn_export_json = ttk.Button(sql_btnbar, text="JSON", style="Export.TButton",
+                                          command=self._export_json, state="disabled")
         self.btn_export_json.pack(side="right", padx=2)
-        self.btn_export_csv = ttk.Button(sql_btnbar, text="CSV", command=self._export_csv, state="disabled")
+        self.btn_export_csv = ttk.Button(sql_btnbar, text="CSV", style="Export.TButton",
+                                         command=self._export_csv, state="disabled")
         self.btn_export_csv.pack(side="right", padx=2)
         tk.Label(sql_btnbar, text="エクスポート:", bg=C["surface"], fg=C["fg2"],
                  font=("Segoe UI", 8)).pack(side="right", padx=(0, 4))
