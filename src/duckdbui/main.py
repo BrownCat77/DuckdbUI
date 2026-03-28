@@ -4,6 +4,7 @@ import duckdb
 import json
 import csv
 import os
+from datetime import datetime
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -59,6 +60,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.last_result: tuple[list, list] | None = None  # (columns, rows)
         self.saved_queries: list = load_saved_queries(None)  # 初期はインメモリ用
         self._drag_query_idx: int | None = None
+        self._drag_query_start_pos: tuple = (0, 0)
+        self._drag_query_moved: bool = False
         self._drag_ghost: tk.Toplevel | None = None
         self._drag_table_name: str = ""
         self._drag_start_pos: tuple = (0, 0)
@@ -528,10 +531,14 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self.tree.insert("", "end", values=[str(v) if v is not None else "NULL" for v in row])
 
     # --------------------------------------------------------- Export ------
+    def _export_base_name(self) -> str:
+        return datetime.now().strftime("%Y%m%d_%H%M%S")
+
     def _export_csv(self):
         if not self.last_result:
             return
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+                                            initialfile=self._export_base_name() + ".csv")
         if not path:
             return
         columns, rows = self.last_result
@@ -544,7 +551,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def _export_json(self):
         if not self.last_result:
             return
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")])
+        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")],
+                                            initialfile=self._export_base_name() + ".json")
         if not path:
             return
         columns, rows = self.last_result
@@ -556,10 +564,10 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def _export_parquet(self):
         if not self.last_result:
             return
-        path = filedialog.asksaveasfilename(defaultextension=".parquet", filetypes=[("Parquet", "*.parquet")])
+        path = filedialog.asksaveasfilename(defaultextension=".parquet", filetypes=[("Parquet", "*.parquet")],
+                                            initialfile=self._export_base_name() + ".parquet")
         if not path:
             return
-        # last_resultをDataFrameに変換してCOPY TO
         columns, rows = self.last_result
         tmp_con = duckdb.connect()
         tmp_con.execute(
@@ -576,16 +584,6 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     def _clear_editor(self):
         self.sql_editor.delete("1.0", "end")
-        if not self.last_result:
-            return
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")])
-        if not path:
-            return
-        columns, rows = self.last_result
-        data = [dict(zip(columns, row)) for row in rows]
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-        self._show_status("JSONをエクスポートしました")
 
     # --------------------------------------------------------- Saved Queries
     def _refresh_query_list(self):
@@ -613,12 +611,10 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self._hide_tooltip()
 
         for w in (row, lbl):
-            w.bind("<Double-Button-1>", lambda e, i=idx: self._load_query_by_idx(i))
             w.bind("<Enter>", on_enter)
             w.bind("<Leave>", on_leave)
             w.bind("<Motion>", lambda e, i=idx: self._on_query_hover_idx(e, i))
-            # ドラッグ&ドロップ
-            w.bind("<ButtonPress-1>", lambda e, i=idx: self._on_query_drag_start(i))
+            w.bind("<ButtonPress-1>", lambda e, i=idx: self._on_query_drag_start(i, e))
             w.bind("<B1-Motion>", lambda e, i=idx: self._on_query_drag_motion(e, i))
             w.bind("<ButtonRelease-1>", lambda e, i=idx: self._on_query_drag_release(e, i))
 
@@ -649,29 +645,44 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self._show_status("クエリを保存しました")
 
     # ドラッグ&ドロップ並び替え
-    def _on_query_drag_start(self, idx: int):
+    def _on_query_drag_start(self, idx: int, event):
         self._drag_query_idx = idx
+        self._drag_query_start_pos = (event.x_root, event.y_root)
+        self._drag_query_moved = False
 
     def _on_query_drag_motion(self, event, idx: int):
-        # ドラッグ中はカーソル位置から移動先インデックスを計算してハイライト
+        C = self._C
+        dx = abs(event.x_root - self._drag_query_start_pos[0])
+        dy = abs(event.y_root - self._drag_query_start_pos[1])
+        if dx < 5 and dy < 5:
+            return
+        self._drag_query_moved = True
         rows = self.query_inner.winfo_children()
         y = event.y_root - self.query_inner.winfo_rooty()
         target = max(0, min(len(rows) - 1, y // 24))
         for i, r in enumerate(rows):
-            r.config(bg="#e94560" if i == target else "#0d1117")
+            bg = C["accent2"] if i == target else C["editor"]
+            r.config(bg=bg)
             for child in r.winfo_children():
-                child.config(bg="#e94560" if i == target else "#0d1117")
+                child.config(bg=bg)
 
     def _on_query_drag_release(self, event, idx: int):
+        C = self._C
         rows = self.query_inner.winfo_children()
-        y = event.y_root - self.query_inner.winfo_rooty()
-        target = max(0, min(len(rows) - 1, y // 24))
-        if self._drag_query_idx is not None and self._drag_query_idx != target:
-            item = self.saved_queries.pop(self._drag_query_idx)
-            self.saved_queries.insert(target, item)
-            save_saved_queries(self.saved_queries, self.current_db)
-        self._drag_query_idx = None
-        self._refresh_query_list()
+        if self._drag_query_moved:
+            y = event.y_root - self.query_inner.winfo_rooty()
+            target = max(0, min(len(rows) - 1, y // 24))
+            if self._drag_query_idx is not None and self._drag_query_idx != target:
+                item = self.saved_queries.pop(self._drag_query_idx)
+                self.saved_queries.insert(target, item)
+                save_saved_queries(self.saved_queries, self.current_db)
+            self._drag_query_idx = None
+            self._drag_query_moved = False
+            self._refresh_query_list()
+        else:
+            # クリックとして扱う
+            self._drag_query_moved = False
+            self._load_query_by_idx(idx)
 
     # --------------------------------------------------------- Helpers -----
     def _build_page_bar(self, parent: tk.Frame):
