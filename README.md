@@ -28,6 +28,7 @@ uv run duckdbui
 |---|---|
 | [機能一覧](documents/features.md) | 全機能の一覧と説明 |
 | [使い方](documents/usage.html) | 画面構成・操作手順・ショートカット |
+| [ビルド・配布手順](documents/build.md) | exe化の手順・配布フォルダ構成 |
 
 ## プロジェクト構成
 

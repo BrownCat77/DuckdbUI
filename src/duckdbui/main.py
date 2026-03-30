@@ -4,6 +4,7 @@ import duckdb
 import json
 import csv
 import os
+import sys
 import webbrowser
 from datetime import datetime
 
@@ -13,7 +14,15 @@ try:
 except ImportError:
     _DND_AVAILABLE = False
 
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "db-files")
+
+def _app_root() -> str:
+    """exe化時と通常実行時の両方でプロジェクトルートを返す"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+DB_DIR = os.path.join(_app_root(), "db-files")
 
 
 def ensure_db_dir():
@@ -852,10 +861,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.after(3000, lambda: self.result_info.config(text=""))
 
     def _open_usage(self):
-        doc_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "documents", "usage.html"
-        )
+        doc_path = os.path.join(_app_root(), "documents", "usage.html")
         webbrowser.open(f"file:///{doc_path.replace(os.sep, '/')}")
 
 
