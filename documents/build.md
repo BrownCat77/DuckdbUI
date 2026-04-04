@@ -33,7 +33,7 @@ uv add --dev pyinstaller
 ### 2. ビルド実行
 
 ```bash
-uv run pyinstaller --onefile --windowed --name duckdbui --add-data "documents;documents" src/duckdbui/main.py
+uv run pyinstaller --onefile --windowed --name duckdbui --add-data "documents;documents" --hidden-import uuid src/duckdbui/main.py
 ```
 
 | オプション | 説明 |
@@ -42,6 +42,7 @@ uv run pyinstaller --onefile --windowed --name duckdbui --add-data "documents;do
 | `--windowed` | コンソールウィンドウを非表示にする |
 | `--name duckdbui` | 出力ファイル名 |
 | `--add-data "documents;documents"` | `documents/` フォルダを同梱する |
+| `--hidden-import uuid` | DuckDB内部で使用する `uuid` モジュールを明示的に同梱する |
 
 ### 3. 出力先
 
@@ -92,5 +93,5 @@ duckdbui.spec   # PyInstaller の設定ファイル（自動生成）
 ソースを変更した場合は同じコマンドを再実行するだけです。
 
 ```bash
-uv run pyinstaller --onefile --windowed --name duckdbui --add-data "documents;documents" src/duckdbui/main.py
+uv run pyinstaller --onefile --windowed --name duckdbui --add-data "documents;documents" --hidden-import uuid src/duckdbui/main.py
 ```

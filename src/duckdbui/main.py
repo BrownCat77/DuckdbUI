@@ -372,17 +372,22 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         C = self._C
         row = tk.Frame(self.table_inner, bg=C["editor"], cursor="hand2")
         row.pack(fill="x")
+        btn_del = tk.Label(row, text="✕", bg=C["editor"], fg=C["fg2"],
+                           font=("Segoe UI", 9), padx=6, cursor="hand2")
+        btn_del.pack(side="right")
+        btn_ddl = tk.Label(row, text="{ }", bg=C["editor"], fg=C["fg2"],
+                           font=("Consolas", 8), padx=4, cursor="hand2")
+        btn_ddl.pack(side="right")
         lbl = tk.Label(row, text=name, bg=C["editor"], fg=C["fg"],
                        font=("Segoe UI", 9), anchor="w", padx=10)
         lbl.pack(side="left", fill="x", expand=True)
-        btn = tk.Label(row, text="✕", bg=C["editor"], fg=C["fg2"],
-                       font=("Segoe UI", 9), padx=6, cursor="hand2")
-        btn.pack(side="right")
 
-        def on_enter(e, r=row, l=lbl, b=btn):
-            r.config(bg=C["row_hover"]); l.config(bg=C["row_hover"]); b.config(bg=C["row_hover"])
-        def on_leave(e, r=row, l=lbl, b=btn):
-            r.config(bg=C["editor"]); l.config(bg=C["editor"]); b.config(bg=C["editor"])
+        def on_enter(e, r=row, l=lbl, bd=btn_del, bddl=btn_ddl):
+            for w in (r, l, bd, bddl): w.config(bg=C["row_hover"])
+        def on_leave(e, r=row, l=lbl, bd=btn_del, bddl=btn_ddl):
+            for w in (r, l, bd, bddl): w.config(bg=C["editor"])
+            btn_del.config(fg=C["fg2"])
+            btn_ddl.config(fg=C["fg2"])
             self._hide_tooltip()
 
         for w in (row, lbl):
@@ -394,14 +399,45 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             w.bind("<B1-Motion>", lambda e, n=name: self._on_table_drag_motion(e, n))
             w.bind("<ButtonRelease-1>", lambda e, n=name: self._on_table_drag_release(e, n))
 
-        btn.bind("<Enter>", lambda e: btn.config(fg=C["danger"]))
-        btn.bind("<Leave>", lambda e: btn.config(fg=C["fg2"]))
-        btn.bind("<Button-1>", lambda e, n=name: self._remove_table_by_name(n))
+        btn_del.bind("<Enter>", lambda e: btn_del.config(fg=C["danger"]))
+        btn_del.bind("<Leave>", lambda e: btn_del.config(fg=C["fg2"]))
+        btn_del.bind("<Button-1>", lambda e, n=name: self._remove_table_by_name(n))
+
+        btn_ddl.bind("<Enter>", lambda e: btn_ddl.config(fg=C["danger"]))
+        btn_ddl.bind("<Leave>", lambda e: btn_ddl.config(fg=C["fg2"]))
+        btn_ddl.bind("<Button-1>", lambda e, n=name: self._show_ddl(n))
 
     def _insert_select(self, name: str):
         self.sql_editor.delete("1.0", "end")
         self.sql_editor.insert("1.0", f"SELECT * FROM {name}")
         self._run_query()
+
+    def _show_ddl(self, name: str):
+        try:
+            # VIEW定義を取得
+            rows = self.con.execute(
+                "SELECT sql FROM duckdb_views() WHERE view_name = ?", [name]
+            ).fetchall()
+            if rows and rows[0][0]:
+                sql = rows[0][0]
+            else:
+                # テーブルのカラム定義を取得
+                cols = self.con.execute(
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "WHERE table_name = ? AND table_schema = 'main' ORDER BY ordinal_position",
+                    [name]
+                ).fetchall()
+                if cols:
+                    col_lines = ",\n  ".join(f"{c}  {t}" for c, t in cols)
+                    sql = f"-- TABLE: {name}\n-- columns:\n  {col_lines}"
+                else:
+                    sql = f"-- {name}"
+        except Exception as e:
+            sql = f"-- エラー: {e}"
+
+        self.sql_editor.delete("1.0", "end")
+        self.sql_editor.insert("1.0", sql)
+        self._show_status(f'"{name}" の定義を表示しました')
 
     # テーブル名 → SQLエディタ ドラッグ&ドロップ
     def _on_table_drag_start(self, event, name: str):
