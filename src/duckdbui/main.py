@@ -75,6 +75,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self._drag_ghost: tk.Toplevel | None = None
         self._drag_table_name: str = ""
         self._drag_start_pos: tuple = (0, 0)
+        self._sash_x: int = 0
+        self._sash_w: int = 0
         self._page = 0
         self._page_size = 100
         self._tooltip: tk.Toplevel | None = None
@@ -173,9 +175,16 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
         # 左サイドバー
         sidebar = tk.Frame(container, bg=C["surface"], width=210)
-        sidebar.grid(row=0, column=0, sticky="ns")
+        sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.pack_propagate(False)
-        tk.Frame(container, bg=C["border"], width=1).grid(row=0, column=0, sticky="nse")
+
+        # 左サッシ
+        left_sash = tk.Frame(container, bg=C["border"], width=4, cursor="sb_h_double_arrow")
+        left_sash.grid(row=0, column=0, sticky="nse")
+        left_sash.bind("<ButtonPress-1>", lambda e: self._sash_start(e, sidebar, "left"))
+        left_sash.bind("<B1-Motion>", lambda e: self._sash_drag(e, sidebar, "left"))
+        left_sash.bind("<Enter>", lambda e: left_sash.config(bg=C["accent"]))
+        left_sash.bind("<Leave>", lambda e: left_sash.config(bg=C["border"]))
 
         tk.Label(sidebar, text="TABLES", bg=C["surface"], fg=C["fg2"],
                  font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=12, pady=(14, 4))
@@ -263,9 +272,16 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
         # 右サイドバー
         qsidebar = tk.Frame(container, bg=C["surface"], width=220)
-        qsidebar.grid(row=0, column=2, sticky="ns")
+        qsidebar.grid(row=0, column=2, sticky="nsew")
         qsidebar.pack_propagate(False)
-        tk.Frame(container, bg=C["border"], width=1).grid(row=0, column=2, sticky="nsw")
+
+        # 右サッシ
+        right_sash = tk.Frame(container, bg=C["border"], width=4, cursor="sb_h_double_arrow")
+        right_sash.grid(row=0, column=2, sticky="nsw")
+        right_sash.bind("<ButtonPress-1>", lambda e: self._sash_start(e, qsidebar, "right"))
+        right_sash.bind("<B1-Motion>", lambda e: self._sash_drag(e, qsidebar, "right"))
+        right_sash.bind("<Enter>", lambda e: right_sash.config(bg=C["accent"]))
+        right_sash.bind("<Leave>", lambda e: right_sash.config(bg=C["border"]))
 
         tk.Label(qsidebar, text="SAVED QUERIES", bg=C["surface"], fg=C["fg2"],
                  font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=12, pady=(14, 4))
@@ -411,6 +427,17 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.sql_editor.delete("1.0", "end")
         self.sql_editor.insert("1.0", f"SELECT * FROM {name}")
         self._run_query()
+
+    def _sash_start(self, event, panel: tk.Frame, side: str):
+        self._sash_x = event.x_root
+        self._sash_w = panel.winfo_width()
+
+    def _sash_drag(self, event, panel: tk.Frame, side: str):
+        dx = event.x_root - self._sash_x
+        if side == "right":
+            dx = -dx
+        new_w = max(120, self._sash_w + dx)
+        panel.config(width=new_w)
 
     def _show_ddl(self, name: str):
         try:
