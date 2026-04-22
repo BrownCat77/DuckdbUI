@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
     "duckdb>=1.5.1",
+    "taskipy>=1.14.1",
     "tkinterdnd2>=0.4.3",
 ]
 
@@ -22,6 +23,10 @@ build-backend = "hatchling.build"
 dev = [
     "pyinstaller>=6.19.0",
 ]
+
+[tool.taskipy.tasks]
+run = "uv run duckdbui"
+build = "uv run pyinstaller --onefile --windowed --name duckdbui --add-data \"documents;documents\" --hidden-import uuid src/duckdbui/main.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/duckdbui"]

@@ -557,6 +557,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         name = os.path.basename(path)
         ext = name.rsplit(".", 1)[-1].lower()
         table_name = name.rsplit(".", 1)[0].replace(" ", "_").replace("-", "_")
+        if table_name and table_name[0].isdigit():
+            table_name = "_" + table_name
 
         try:
             if ext == "parquet":
