@@ -425,7 +425,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     def _insert_select(self, name: str):
         self.sql_editor.delete("1.0", "end")
-        self.sql_editor.insert("1.0", f"SELECT * FROM {name}")
+        self.sql_editor.insert("1.0", f"SUMMARIZE {name}")
         self._run_query()
 
     def _sash_start(self, event, panel: tk.Frame, side: str):
