@@ -77,6 +77,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self._drag_start_pos: tuple = (0, 0)
         self._sash_x: int = 0
         self._sash_w: int = 0
+        self._vsash_y: int = 0
+        self._vsash_h: int = 0
         self._page = 0
         self._page_size = 100
         self._tooltip: tk.Toplevel | None = None
@@ -206,11 +208,17 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         right = tk.Frame(container, bg=C["bg"])
         right.grid(row=0, column=1, sticky="nsew")
 
+        # エディタ領域（SQLエディタ + ボタンバー）をまとめて高さ可変にする
+        editor_area = tk.Frame(right, bg=C["bg"], height=170)
+        editor_area.pack(fill="x")
+        editor_area.pack_propagate(False)
+        self._editor_area = editor_area
+
         # SQLエディタ
-        editor_frame = tk.Frame(right, bg=C["editor"])
-        editor_frame.pack(fill="x")
+        editor_frame = tk.Frame(editor_area, bg=C["editor"])
+        editor_frame.pack(fill="both", expand=True)
         tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
-        self.sql_editor = tk.Text(editor_frame, height=9, bg=C["editor"], fg="#a9b1d6",
+        self.sql_editor = tk.Text(editor_frame, height=5, bg=C["editor"], fg="#a9b1d6",
                                   insertbackground=C["fg"], font=("Consolas", 10),
                                   relief="flat", bd=0, padx=14, pady=10, wrap="none",
                                   selectbackground=C["surface2"], selectforeground=C["fg"])
@@ -219,8 +227,8 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
 
         # ボタンバー
-        sql_btnbar = tk.Frame(right, bg=C["surface"], pady=6, padx=10)
-        sql_btnbar.pack(fill="x")
+        sql_btnbar = tk.Frame(editor_area, bg=C["surface"], pady=6, padx=10)
+        sql_btnbar.pack(fill="x", side="bottom")
         ttk.Button(sql_btnbar, text="▶  実行   Ctrl+Enter", style="Run.TButton",
                    command=self._run_query).pack(side="left", padx=(0, 6))
         ttk.Button(sql_btnbar, text="💾 保存", style="Action.TButton",
@@ -238,7 +246,14 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.btn_export_csv.pack(side="right", padx=2)
         tk.Label(sql_btnbar, text="エクスポート:", bg=C["surface"], fg=C["fg2"],
                  font=("Segoe UI", 8)).pack(side="right", padx=(0, 4))
-        tk.Frame(right, bg=C["border"], height=1).pack(fill="x")
+
+        # 上下サッシ（エディタ領域と結果領域の境界。ドラッグで高さ調整）
+        mid_sash = tk.Frame(right, bg=C["border"], height=5, cursor="sb_v_double_arrow")
+        mid_sash.pack(fill="x")
+        mid_sash.bind("<ButtonPress-1>", self._vsash_start)
+        mid_sash.bind("<B1-Motion>", self._vsash_drag)
+        mid_sash.bind("<Enter>", lambda e: mid_sash.config(bg=C["accent"]))
+        mid_sash.bind("<Leave>", lambda e: mid_sash.config(bg=C["border"]))
 
         # ステータス
         self.result_info = tk.Label(right, text="", bg=C["bg"], fg=C["fg2"],
@@ -441,6 +456,18 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             dx = -dx
         new_w = max(120, self._sash_w + dx)
         panel.config(width=new_w)
+
+    def _vsash_start(self, event):
+        self._vsash_y = event.y_root
+        self._vsash_h = self._editor_area.winfo_height()
+
+    def _vsash_drag(self, event):
+        dy = event.y_root - self._vsash_y
+        # 最小はボタンバーが見える程度、最大は中央領域からはみ出さない範囲
+        max_h = self._editor_area.master.winfo_height() - 120
+        new_h = self._vsash_h + dy
+        new_h = max(90, min(new_h, max(90, max_h)))
+        self._editor_area.config(height=new_h)
 
     def _show_ddl(self, name: str):
         try:
