@@ -141,6 +141,16 @@
     <li>Windowsエクスプローラーからのドロップに対応しています</li>
   </ul>
 
+  <h4>フォルダをドロップした場合</h4>
+  <p>フォルダをドロップすると <strong>VIEW作成ウィンドウ</strong> が開きます。以下を指定して「作成」ボタンを押すとVIEWが作成されます。</p>
+  <table>
+    <tr><th>項目</th><th>説明</th></tr>
+    <tr><td>ビュー名</td><td>作成するVIEWの名前（初期値はフォルダ名）</td></tr>
+    <tr><td>フォーマット</td><td><code>parquet</code> / <code>csv</code> / <code>json</code>（初期値は <code>parquet</code>）</td></tr>
+    <tr><td>ファイルパス</td><td>読み込み対象のパス（初期値はドロップしたフォルダ配下の <code>*.parquet</code>）</td></tr>
+  </table>
+  <div class="tip">フォーマットを切り替えるとファイルパス末尾の <code>*.parquet</code> が <code>*.csv</code> / <code>*.json</code> に自動で追従します。パスを手動で書き換えた場合はその内容が優先されます。</div>
+
   <h3>2. SQLを実行する</h3>
   <p>エディタにSQLを入力して実行します。</p>
   <pre>SELECT * FROM your_file</pre>

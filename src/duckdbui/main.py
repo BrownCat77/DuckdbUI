@@ -215,7 +215,6 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
                                   relief="flat", bd=0, padx=14, pady=10, wrap="none",
                                   selectbackground=C["surface2"], selectforeground=C["fg"])
         self.sql_editor.pack(fill="both", expand=True)
-        self.sql_editor.insert("1.0", "SELECT i AS num FROM range(1, 10) AS sample(i)")
         self.sql_editor.bind("<Control-Return>", lambda e: self._run_query())
         tk.Frame(editor_frame, bg=C["border"], height=1).pack(fill="x")
 
@@ -314,7 +313,11 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def _on_drop(self, event):
         paths = self.tk.splitlist(event.data)
         for path in paths:
-            self._load_file(path)
+            cleaned = path.strip().strip('"').strip("'")
+            if os.path.isdir(cleaned):
+                self._open_view_dialog(cleaned)
+            else:
+                self._load_file(path)
 
     # --------------------------------------------------------- DB Management -
     def _refresh_db_list(self):
@@ -425,7 +428,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
     def _insert_select(self, name: str):
         self.sql_editor.delete("1.0", "end")
-        self.sql_editor.insert("1.0", f"SUMMARIZE {name}")
+        self.sql_editor.insert("1.0", f'SELECT * FROM "{name}"')
         self._run_query()
 
     def _sash_start(self, event, panel: tk.Frame, side: str):
@@ -579,7 +582,129 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self._sync_tables_from_db()
         self._show_status(f'"{table_name}" をロードしました')
 
-    # --------------------------------------------------------- Query Run ----
+    # --------------------------------------------------------- View Dialog --
+    def _open_view_dialog(self, folder_path: str):
+        """フォルダドロップ時にVIEW作成用ウィンドウを表示する"""
+        C = self._C
+        default_name = os.path.basename(folder_path.rstrip("\\/")) or "view"
+        default_name = default_name.replace(" ", "_").replace("-", "_")
+        if default_name and default_name[0].isdigit():
+            default_name = "_" + default_name
+
+        dialog = tk.Toplevel(self)
+        dialog.title("VIEWを作成")
+        dialog.configure(bg=C["surface"])
+        dialog.geometry("560x260")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        wrap = tk.Frame(dialog, bg=C["surface"])
+        wrap.pack(fill="both", expand=True, padx=16, pady=14)
+        wrap.columnconfigure(1, weight=1)
+
+        def _label(text, row):
+            tk.Label(wrap, text=text, bg=C["surface"], fg=C["fg2"],
+                     font=("Segoe UI", 9), anchor="w").grid(
+                row=row, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
+
+        # ビュー名
+        _label("ビュー名", 0)
+        name_var = tk.StringVar(value=default_name)
+        name_entry = tk.Entry(wrap, textvariable=name_var, bg=C["editor"], fg=C["fg"],
+                              insertbackground=C["fg"], relief="flat", font=("Consolas", 10))
+        name_entry.grid(row=0, column=1, sticky="ew", ipady=4, pady=(0, 10))
+
+        # ファイルフォーマット
+        _label("フォーマット", 1)
+        fmt_var = tk.StringVar(value="parquet")
+        fmt_menu = tk.OptionMenu(wrap, fmt_var, "parquet", "csv", "json")
+        fmt_menu.config(bg=C["editor"], fg=C["fg"], activebackground=C["surface2"],
+                        activeforeground=C["fg"], relief="flat", borderwidth=0,
+                        highlightthickness=0, font=("Segoe UI", 9))
+        fmt_menu["menu"].config(bg=C["surface2"], fg=C["fg"],
+                                activebackground=C["accent"], activeforeground="#fff",
+                                borderwidth=0, font=("Segoe UI", 9))
+        fmt_menu.grid(row=1, column=1, sticky="w", pady=(0, 10))
+
+        # ファイルパス（初期値はフォルダ配下の *.<フォーマット> ワイルドカード）
+        base = folder_path.rstrip("\\/")
+        _label("ファイルパス", 2)
+        path_var = tk.StringVar(value=f"{base}/*.parquet")
+        path_entry = tk.Entry(wrap, textvariable=path_var, bg=C["editor"], fg=C["fg"],
+                              insertbackground=C["fg"], relief="flat", font=("Consolas", 10))
+        path_entry.grid(row=2, column=1, sticky="ew", ipady=4, pady=(0, 4))
+
+        # フォーマット変更時、末尾が */*.<旧拡張子> ならワイルドカードの拡張子を追従させる
+        def _on_fmt_change(new_fmt):
+            cur = path_var.get()
+            for ext in ("parquet", "csv", "json"):
+                suffix = f"/*.{ext}"
+                if cur.endswith(suffix):
+                    path_var.set(cur[: -len(suffix)] + f"/*.{new_fmt}")
+                    break
+        fmt_var.trace_add("write", lambda *a: _on_fmt_change(fmt_var.get()))
+
+        tk.Label(wrap, text="例: フォルダ配下をまとめて読む場合は末尾に /*.parquet を付与",
+                 bg=C["surface"], fg=C["fg2"], font=("Segoe UI", 7), anchor="w").grid(
+            row=3, column=1, sticky="w", pady=(0, 10))
+
+        # ボタン
+        btn_bar = tk.Frame(wrap, bg=C["surface"])
+        btn_bar.grid(row=4, column=0, columnspan=2, sticky="e", pady=(6, 0))
+
+        def _on_create():
+            view_name = name_var.get().strip()
+            fmt = fmt_var.get()
+            path = path_var.get().strip()
+            if not view_name:
+                messagebox.showwarning("警告", "ビュー名を入力してください", parent=dialog)
+                return
+            if not path:
+                messagebox.showwarning("警告", "ファイルパスを入力してください", parent=dialog)
+                return
+            if self._create_view_from_path(view_name, fmt, path, parent=dialog):
+                dialog.destroy()
+
+        style_btn_kwargs = dict(relief="flat", borderwidth=0, font=("Segoe UI", 9),
+                                padx=14, pady=6, cursor="hand2")
+        tk.Button(btn_bar, text="キャンセル", command=dialog.destroy,
+                  bg=C["surface2"], fg=C["fg"], activebackground=C["border"],
+                  activeforeground=C["fg"], **style_btn_kwargs).pack(side="right", padx=(6, 0))
+        tk.Button(btn_bar, text="作成", command=_on_create,
+                  bg=C["accent"], fg="#ffffff", activebackground="#6a59e0",
+                  activeforeground="#ffffff", **style_btn_kwargs).pack(side="right")
+
+        name_entry.focus_set()
+        name_entry.selection_range(0, "end")
+
+    def _create_view_from_path(self, view_name: str, fmt: str, path: str, parent=None) -> bool:
+        """入力内容にしたがってVIEWを作成する。成功したらTrueを返す"""
+        table_name = view_name.replace(" ", "_").replace("-", "_")
+        if table_name and table_name[0].isdigit():
+            table_name = "_" + table_name
+        path_for_duckdb = path.replace("\\", "/")
+
+        scan = {
+            "parquet": "parquet_scan",
+            "csv": "read_csv_auto",
+            "json": "read_json_auto",
+        }.get(fmt)
+        if scan is None:
+            messagebox.showwarning("未対応", f"未対応のフォーマット: {fmt}", parent=parent)
+            return False
+
+        sql = (f'CREATE OR REPLACE VIEW "{table_name}" AS '
+               f"SELECT * FROM {scan}('{path_for_duckdb}')")
+        try:
+            self.con.execute(sql)
+        except Exception as e:
+            messagebox.showerror("エラー", str(e), parent=parent)
+            return False
+
+        self.loaded_tables[table_name] = path
+        self._sync_tables_from_db()
+        self._show_status(f'"{table_name}" をロードしました')
+        return True
     def _run_query(self):
         sql = self.sql_editor.get("1.0", "end").strip()
         if not sql:
