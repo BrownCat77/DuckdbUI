@@ -69,6 +69,13 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.loaded_tables: dict[str, str] = {}
         self.last_result: tuple[list, list] | None = None  # (columns, rows)
         self.saved_queries: list = load_saved_queries(None)  # 初期はインメモリ用
+        # クエリ/結果タブ（各タブは {name, sql, last_result, page} を保持）
+        self.tabs: list[dict] = []
+        self.active_tab_idx: int = 0
+        self._tab_counter: int = 0
+        self._drag_tab_idx: int | None = None
+        self._drag_tab_moved: bool = False
+        self._drag_tab_start_x: int = 0
         self._drag_query_idx: int | None = None
         self._drag_query_start_pos: tuple = (0, 0)
         self._drag_query_moved: bool = False
@@ -208,6 +215,19 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         right = tk.Frame(container, bg=C["bg"])
         right.grid(row=0, column=1, sticky="nsew")
 
+        # クエリ/結果タブバー
+        tabbar_outer = tk.Frame(right, bg=C["surface"])
+        tabbar_outer.pack(fill="x")
+        self.tab_strip = tk.Frame(tabbar_outer, bg=C["surface"])
+        self.tab_strip.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self.tab_add_btn = tk.Label(tabbar_outer, text="＋", bg=C["surface"], fg=C["fg2"],
+                                    font=("Segoe UI", 11), padx=10, cursor="hand2")
+        self.tab_add_btn.pack(side="left")
+        self.tab_add_btn.bind("<Enter>", lambda e: self.tab_add_btn.config(fg=C["accent"]))
+        self.tab_add_btn.bind("<Leave>", lambda e: self.tab_add_btn.config(fg=C["fg2"]))
+        self.tab_add_btn.bind("<Button-1>", lambda e: self._add_tab())
+        tk.Frame(right, bg=C["border"], height=1).pack(fill="x")
+
         # エディタ領域（SQLエディタ + ボタンバー）をまとめて高さ可変にする
         editor_area = tk.Frame(right, bg=C["bg"], height=170)
         editor_area.pack(fill="x")
@@ -315,6 +335,199 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
         self._refresh_query_list()
         self._refresh_db_list()
+
+        # 初期タブを1枚作成
+        self._new_tab_state()
+        self.active_tab_idx = 0
+        self._load_tab_state(0)
+        self._refresh_tab_strip()
+
+    # --------------------------------------------------------- Query Tabs ---
+    def _new_tab_state(self) -> dict:
+        """新しいタブ状態を作成してtabsに追加する"""
+        self._tab_counter += 1
+        tab = {
+            "name": f"クエリ{self._tab_counter}",
+            "sql": "",
+            "last_result": None,
+            "page": 0,
+        }
+        self.tabs.append(tab)
+        return tab
+
+    def _save_active_tab_state(self):
+        """現在のエディタ/結果の内容をアクティブタブへ退避する"""
+        if not (0 <= self.active_tab_idx < len(self.tabs)):
+            return
+        tab = self.tabs[self.active_tab_idx]
+        tab["sql"] = self.sql_editor.get("1.0", "end-1c")
+        tab["last_result"] = self.last_result
+        tab["page"] = self._page
+
+    def _load_tab_state(self, idx: int):
+        """指定タブの内容をエディタ/結果へ復元する"""
+        if not (0 <= idx < len(self.tabs)):
+            return
+        tab = self.tabs[idx]
+        self.active_tab_idx = idx
+        # エディタ
+        self.sql_editor.delete("1.0", "end")
+        self.sql_editor.insert("1.0", tab["sql"])
+        # 結果
+        self.last_result = tab["last_result"]
+        self._page = tab["page"]
+        if self.last_result:
+            self._render_page()
+            state = "normal"
+        else:
+            self.tree.delete(*self.tree.get_children())
+            self.tree["columns"] = ()
+            self._clear_page_bars()
+            state = "disabled"
+        self.btn_export_csv.config(state=state)
+        self.btn_export_json.config(state=state)
+        self.btn_export_parquet.config(state=state)
+
+    def _switch_tab(self, idx: int):
+        if idx == self.active_tab_idx or not (0 <= idx < len(self.tabs)):
+            return
+        self._save_active_tab_state()
+        self._load_tab_state(idx)
+        self._refresh_tab_strip()
+
+    def _add_tab(self):
+        self._save_active_tab_state()
+        self._new_tab_state()
+        self._load_tab_state(len(self.tabs) - 1)
+        self._refresh_tab_strip()
+
+    def _close_tab(self, idx: int):
+        if not (0 <= idx < len(self.tabs)):
+            return
+        # 最後の1枚は閉じずに中身をクリアする
+        if len(self.tabs) == 1:
+            self.tabs[0]["sql"] = ""
+            self.tabs[0]["last_result"] = None
+            self.tabs[0]["page"] = 0
+            self._load_tab_state(0)
+            self._refresh_tab_strip()
+            return
+        del self.tabs[idx]
+        # アクティブインデックスを補正
+        if self.active_tab_idx > idx:
+            self.active_tab_idx -= 1
+        elif self.active_tab_idx == idx:
+            self.active_tab_idx = min(idx, len(self.tabs) - 1)
+        self._load_tab_state(self.active_tab_idx)
+        self._refresh_tab_strip()
+
+    def _rename_tab(self, idx: int):
+        if not (0 <= idx < len(self.tabs)):
+            return
+        current = self.tabs[idx]["name"]
+        new_name = simpledialog.askstring("タブ名の変更", "新しいタブ名:",
+                                          initialvalue=current, parent=self)
+        if new_name is None:
+            return
+        new_name = new_name.strip()
+        if new_name:
+            self.tabs[idx]["name"] = new_name
+            self._refresh_tab_strip()
+
+    def _refresh_tab_strip(self):
+        C = self._C
+        for w in self.tab_strip.winfo_children():
+            w.destroy()
+        for idx, tab in enumerate(self.tabs):
+            self._add_tab_button(idx, tab)
+
+    def _add_tab_button(self, idx: int, tab: dict):
+        C = self._C
+        active = (idx == self.active_tab_idx)
+        bg = C["editor"] if active else C["surface"]
+        fg = C["fg"] if active else C["fg2"]
+        cell = tk.Frame(self.tab_strip, bg=bg, cursor="hand2",
+                        highlightthickness=0)
+        cell.pack(side="left", padx=(0, 2), pady=(3, 0))
+        # アクティブタブ下線
+        top = tk.Frame(cell, bg=(C["accent"] if active else bg), height=2)
+        top.pack(fill="x", side="top")
+        body = tk.Frame(cell, bg=bg)
+        body.pack(fill="x")
+        lbl = tk.Label(body, text=tab["name"], bg=bg, fg=fg,
+                       font=("Segoe UI", 9), padx=10, pady=5, cursor="hand2")
+        lbl.pack(side="left")
+        close = tk.Label(body, text="✕", bg=bg, fg=C["fg2"],
+                         font=("Segoe UI", 8), padx=6, cursor="hand2")
+        close.pack(side="right")
+
+        # クリックで切替、ダブルクリックで改名、ドラッグで並び替え
+        for w in (cell, top, body, lbl):
+            w.bind("<Button-1>", lambda e, i=idx: self._on_tab_press(e, i))
+            w.bind("<B1-Motion>", lambda e, i=idx: self._on_tab_motion(e, i))
+            w.bind("<ButtonRelease-1>", lambda e, i=idx: self._on_tab_release(e, i))
+            w.bind("<Double-Button-1>", lambda e, i=idx: self._rename_tab(i))
+        close.bind("<Enter>", lambda e, c=close: c.config(fg=C["danger"]))
+        close.bind("<Leave>", lambda e, c=close: c.config(fg=C["fg2"]))
+        close.bind("<Button-1>", lambda e, i=idx: (self._close_tab(i), "break")[1])
+
+    # タブのドラッグ&ドロップ並び替え
+    def _on_tab_press(self, event, idx: int):
+        self._drag_tab_idx = idx
+        self._drag_tab_moved = False
+        self._drag_tab_start_x = event.x_root
+
+    def _on_tab_motion(self, event, idx: int):
+        if self._drag_tab_idx is None:
+            return
+        if abs(event.x_root - self._drag_tab_start_x) < 6:
+            return
+        self._drag_tab_moved = True
+
+    def _on_tab_release(self, event, idx: int):
+        if self._drag_tab_idx is None:
+            return
+        src = self._drag_tab_idx
+        moved = self._drag_tab_moved
+        self._drag_tab_idx = None
+        self._drag_tab_moved = False
+        if not moved:
+            # クリック扱い → タブ切替
+            self._switch_tab(src)
+            return
+        # ドロップ先タブを座標から特定
+        target = self._tab_index_at_x(event.x_root)
+        if target is None or target == src:
+            return
+        self._save_active_tab_state()
+        tab = self.tabs.pop(src)
+        self.tabs.insert(target, tab)
+        # アクティブインデックスを追従
+        if self.active_tab_idx == src:
+            self.active_tab_idx = target
+        elif src < self.active_tab_idx <= target:
+            self.active_tab_idx -= 1
+        elif target <= self.active_tab_idx < src:
+            self.active_tab_idx += 1
+        self._refresh_tab_strip()
+
+    def _tab_index_at_x(self, x_root: int) -> int | None:
+        cells = self.tab_strip.winfo_children()
+        for i, cell in enumerate(cells):
+            left = cell.winfo_rootx()
+            right = left + cell.winfo_width()
+            if left <= x_root <= right:
+                return i
+        # 右端より右なら末尾
+        if cells and x_root > cells[-1].winfo_rootx() + cells[-1].winfo_width():
+            return len(cells) - 1
+        return None
+
+    def _clear_page_bars(self):
+        for bar in (self.page_bar_top, self.page_bar_bottom):
+            bar._lbl.config(text="")
+            bar._btn_prev.config(state="disabled")
+            bar._btn_next.config(state="disabled")
 
     # --------------------------------------------------------- Drag & Drop --
     def _setup_dnd(self):
@@ -751,6 +964,7 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
             self.btn_export_csv.config(state="normal")
             self.btn_export_json.config(state="normal")
             self.btn_export_parquet.config(state="normal")
+            self._save_active_tab_state()
             self._sync_tables_from_db()
         except Exception as e:
             messagebox.showerror("クエリエラー", str(e))
