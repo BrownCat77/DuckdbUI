@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
+import tkinter.font as tkfont
 import duckdb
 import json
 import csv
@@ -981,11 +982,32 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def _render_table(self, columns: list, rows: list):
         self.tree.delete(*self.tree.get_children())
         self.tree["columns"] = columns
-        for col in columns:
+
+        # 表示中フォントでテキストの実ピクセル幅を測り、列名とデータの
+        # 長い方に合わせて列幅を決める（上限あり）。
+        # ヘッダー/セルとも Treeview スタイルの Segoe UI 9 で表示される。
+        header_font = tkfont.Font(font=("Segoe UI", 9))
+        cell_font = tkfont.Font(font=("Segoe UI", 9))
+        PADDING = 28          # ヘッダー/セルの左右余白ぶん
+        MIN_WIDTH = 60
+        MAX_WIDTH = 400
+
+        str_rows = [
+            [str(v) if v is not None else "NULL" for v in row]
+            for row in rows
+        ]
+
+        for col_idx, col in enumerate(columns):
             self.tree.heading(col, text=col)
-            self.tree.column(col, width=120, minwidth=60)
-        for row in rows:
-            self.tree.insert("", "end", values=[str(v) if v is not None else "NULL" for v in row])
+            width = header_font.measure(str(col)) + PADDING
+            for str_row in str_rows:
+                if col_idx < len(str_row):
+                    width = max(width, cell_font.measure(str_row[col_idx]) + PADDING)
+            width = max(MIN_WIDTH, min(width, MAX_WIDTH))
+            self.tree.column(col, width=width, minwidth=MIN_WIDTH, stretch=False)
+
+        for str_row in str_rows:
+            self.tree.insert("", "end", values=str_row)
 
     # --------------------------------------------------------- Export ------
     def _export_base_name(self) -> str:
