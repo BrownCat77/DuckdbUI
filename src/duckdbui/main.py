@@ -58,6 +58,60 @@ def save_saved_queries(queries: list, db_name: str | None):
         json.dump(queries, f, ensure_ascii=False, indent=2)
 
 
+def _folders_file(db_name: str | None) -> str:
+    key = "_inmemory" if db_name is None else db_name
+    return os.path.join(DB_DIR, f"{key}.folders.json")
+
+
+def load_folders(db_name: str | None) -> tuple[list, dict, list]:
+    """フォルダ一覧・テーブル→フォルダ対応・折りたたみ状態を読み込む。
+
+    戻り値: (folder_names, assignments, collapsed)
+      folder_names: フォルダ名のリスト(順序・空フォルダ保持用)
+      assignments : {テーブル名: 所属フォルダ名}
+      collapsed   : 折りたたみ中のフォルダ名リスト
+    旧形式({テーブル名: フォルダ名}のみ / collapsed無し)も読み込める。
+    """
+    ensure_db_dir()
+    path = _folders_file(db_name)
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "folders" in data and "assignments" in data:
+            folder_names = [str(x) for x in data.get("folders", [])]
+            assignments = {str(k): str(v) for k, v in data.get("assignments", {}).items()}
+            collapsed = [str(x) for x in data.get("collapsed", [])]
+        elif isinstance(data, dict):
+            # 旧形式: テーブル名→フォルダ名のみ
+            assignments = {str(k): str(v) for k, v in data.items()}
+            folder_names = []
+            for v in assignments.values():
+                if v not in folder_names:
+                    folder_names.append(v)
+            collapsed = []
+        else:
+            folder_names, assignments, collapsed = [], {}, []
+        # assignments にあってfolder_namesに無いフォルダを補完
+        for v in assignments.values():
+            if v not in folder_names:
+                folder_names.append(v)
+        # 存在しないフォルダの折りたたみ状態は捨てる
+        collapsed = [c for c in collapsed if c in folder_names]
+        return folder_names, assignments, collapsed
+    return [], {}, []
+
+
+def save_folders(folder_names: list, assignments: dict, collapsed: list, db_name: str | None):
+    ensure_db_dir()
+    data = {
+        "folders": folder_names,
+        "assignments": assignments,
+        "collapsed": list(collapsed),
+    }
+    with open(_folders_file(db_name), "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
     def __init__(self):
         super().__init__()
@@ -70,6 +124,13 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.loaded_tables: dict[str, str] = {}
         self.last_result: tuple[list, list] | None = None  # (columns, rows)
         self.saved_queries: list = load_saved_queries(None)  # 初期はインメモリ用
+        # フォルダ機能(表示上のグループ分けのみ。DBのschemaは変えない)
+        self.folder_names: list[str] = []            # フォルダ名の一覧(順序・空フォルダ保持)
+        self.table_folders: dict[str, str] = {}      # {テーブル名: 所属フォルダ名}
+        self.folder_names, self.table_folders, _collapsed = load_folders(None)
+        self._collapsed_folders: set[str] = set(_collapsed)  # 折りたたみ中のフォルダ名(保存対象)
+        self._drag_over_folder: str | None = None    # ドラッグ中にホバー中のフォルダ名(Noneはルート)
+        self._folder_click_after: str | None = None  # フォルダ見出しのシングルクリック遅延ID
         # クエリ/結果タブ（各タブは {name, sql, last_result, page} を保持）
         self.tabs: list[dict] = []
         self.active_tab_idx: int = 0
@@ -196,8 +257,16 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         left_sash.bind("<Enter>", lambda e: left_sash.config(bg=C["accent"]))
         left_sash.bind("<Leave>", lambda e: left_sash.config(bg=C["border"]))
 
-        tk.Label(sidebar, text="TABLES", bg=C["surface"], fg=C["fg2"],
-                 font=("Segoe UI", 7, "bold")).pack(anchor="w", padx=12, pady=(14, 4))
+        tables_head = tk.Frame(sidebar, bg=C["surface"])
+        tables_head.pack(fill="x", padx=12, pady=(14, 4))
+        tk.Label(tables_head, text="TABLES", bg=C["surface"], fg=C["fg2"],
+                 font=("Segoe UI", 7, "bold")).pack(side="left", anchor="w")
+        add_folder_btn = tk.Label(tables_head, text="🗀＋", bg=C["surface"], fg=C["fg2"],
+                                  font=("Segoe UI", 9), cursor="hand2")
+        add_folder_btn.pack(side="right")
+        add_folder_btn.bind("<Enter>", lambda e: add_folder_btn.config(fg=C["accent"]))
+        add_folder_btn.bind("<Leave>", lambda e: add_folder_btn.config(fg=C["fg2"]))
+        add_folder_btn.bind("<Button-1>", lambda e: self._create_folder())
 
         table_list_outer = tk.Frame(sidebar, bg=C["editor"])
         table_list_outer.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -592,6 +661,9 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
 
         # ロード済みテーブルをリセットしてDBのテーブルを表示
         self.loaded_tables.clear()
+        # DBごとのフォルダ情報を読み込む(存在しないテーブルの割り当ては後で掃除)
+        self.folder_names, self.table_folders, _collapsed = load_folders(self.current_db)
+        self._collapsed_folders = set(_collapsed)
         self._sync_tables_from_db()
         # DBごとの保存クエリを読み込む
         self.saved_queries = load_saved_queries(self.current_db)
@@ -608,15 +680,156 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
                 self.loaded_tables[name] = ""
         except Exception:
             pass
+        # 存在しないテーブルへのフォルダ割り当てを掃除
+        stale = [t for t in self.table_folders if t not in self.loaded_tables]
+        if stale:
+            for t in stale:
+                self.table_folders.pop(t, None)
+            self._save_folders()
+        self._refresh_table_list()
+
+    def _save_folders(self):
+        collapsed = [f for f in self.folder_names if f in self._collapsed_folders]
+        save_folders(self.folder_names, self.table_folders, collapsed, self.current_db)
+
+    def _create_folder(self):
+        name = simpledialog.askstring("フォルダ作成", "フォルダ名を入力してください:", parent=self)
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            return
+        if name in self.folder_names:
+            messagebox.showwarning("警告", f'フォルダ "{name}" はすでに存在します', parent=self)
+            return
+        self.folder_names.append(name)
+        self._save_folders()
+        self._refresh_table_list()
+        self._show_status(f'フォルダ "{name}" を作成しました')
+
+    def _rename_folder(self, old_name: str):
+        new_name = simpledialog.askstring("フォルダ名の変更", "新しいフォルダ名:",
+                                          initialvalue=old_name, parent=self)
+        if new_name is None:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == old_name:
+            return
+        if new_name in self.folder_names:
+            messagebox.showwarning("警告", f'フォルダ "{new_name}" はすでに存在します', parent=self)
+            return
+        self.folder_names = [new_name if f == old_name else f for f in self.folder_names]
+        for t, f in list(self.table_folders.items()):
+            if f == old_name:
+                self.table_folders[t] = new_name
+        self._collapsed_folders.discard(old_name)
+        self._save_folders()
+        self._refresh_table_list()
+
+    def _delete_folder(self, name: str):
+        """フォルダを削除する。中のテーブルはルート(フォルダ無し)へ戻す。"""
+        if name not in self.folder_names:
+            return
+        self.folder_names.remove(name)
+        for t, f in list(self.table_folders.items()):
+            if f == name:
+                self.table_folders.pop(t, None)
+        self._collapsed_folders.discard(name)
+        self._save_folders()
+        self._refresh_table_list()
+        self._show_status(f'フォルダ "{name}" を削除しました')
+
+    def _on_folder_click(self, name: str):
+        # ダブルクリックと区別するため、開閉処理を少し遅延させる。
+        # 待機中にダブルクリックが来たらキャンセルして改名に回す。
+        if getattr(self, "_folder_click_after", None) is not None:
+            self.after_cancel(self._folder_click_after)
+        self._folder_click_after = self.after(220, lambda: self._do_folder_single_click(name))
+
+    def _do_folder_single_click(self, name: str):
+        self._folder_click_after = None
+        self._toggle_folder(name)
+
+    def _on_folder_double_click(self, name: str):
+        # 遅延中の開閉処理をキャンセルしてから改名する
+        if getattr(self, "_folder_click_after", None) is not None:
+            self.after_cancel(self._folder_click_after)
+            self._folder_click_after = None
+        self._rename_folder(name)
+
+    def _toggle_folder(self, name: str):
+        if name in self._collapsed_folders:
+            self._collapsed_folders.discard(name)
+        else:
+            self._collapsed_folders.add(name)
+        self._save_folders()
+        self._refresh_table_list()
+
+    def _move_table_to_folder(self, table: str, folder: str | None):
+        """テーブルを指定フォルダへ移動。folder=Noneでルート(フォルダ無し)へ。"""
+        if folder is None:
+            self.table_folders.pop(table, None)
+        else:
+            if folder not in self.folder_names:
+                return
+            self.table_folders[table] = folder
+        self._save_folders()
         self._refresh_table_list()
 
     def _refresh_table_list(self):
         for w in self.table_inner.winfo_children():
             w.destroy()
-        for name in self.loaded_tables:
-            self._add_table_row(name)
+        self._folder_row_widgets = {}  # {フォルダ名: 見出し行widget} ドラッグ判定用
 
-    def _add_table_row(self, name: str):
+        # ルート(フォルダ無し)のテーブルを先頭に表示
+        root_tables = [t for t in self.loaded_tables if self.table_folders.get(t) not in self.folder_names]
+        for name in root_tables:
+            self._add_table_row(name, indent=0)
+
+        # フォルダごとに表示
+        for folder in self.folder_names:
+            self._add_folder_header(folder)
+            if folder in self._collapsed_folders:
+                continue
+            members = [t for t in self.loaded_tables if self.table_folders.get(t) == folder]
+            if members:
+                for name in members:
+                    self._add_table_row(name, indent=1)
+            else:
+                C = self._C
+                tk.Label(self.table_inner, text="(空)", bg=C["editor"], fg=C["fg2"],
+                         font=("Segoe UI", 8), anchor="w", padx=28).pack(fill="x")
+
+    def _add_folder_header(self, folder: str):
+        C = self._C
+        collapsed = folder in self._collapsed_folders
+        row = tk.Frame(self.table_inner, bg=C["surface2"], cursor="hand2")
+        row.pack(fill="x", pady=(2, 0))
+        self._folder_row_widgets[folder] = row
+        arrow = "▸" if collapsed else "▾"
+        btn_del = tk.Label(row, text="✕", bg=C["surface2"], fg=C["fg2"],
+                           font=("Segoe UI", 9), padx=6, cursor="hand2")
+        btn_del.pack(side="right")
+        lbl = tk.Label(row, text=f"{arrow} 🗀 {folder}", bg=C["surface2"], fg=C["fg"],
+                       font=("Segoe UI", 9, "bold"), anchor="w", padx=8)
+        lbl.pack(side="left", fill="x", expand=True)
+
+        def on_enter(e, r=row, l=lbl, bd=btn_del):
+            for w in (r, l, bd): w.config(bg=C["row_hover"])
+        def on_leave(e, r=row, l=lbl, bd=btn_del):
+            for w in (r, l, bd): w.config(bg=C["surface2"])
+            btn_del.config(fg=C["fg2"])
+
+        for w in (row, lbl):
+            w.bind("<Button-1>", lambda e, f=folder: self._on_folder_click(f))
+            w.bind("<Double-Button-1>", lambda e, f=folder: self._on_folder_double_click(f))
+            w.bind("<Enter>", on_enter)
+            w.bind("<Leave>", on_leave)
+        btn_del.bind("<Enter>", lambda e: btn_del.config(fg=C["danger"]))
+        btn_del.bind("<Leave>", lambda e: btn_del.config(fg=C["fg2"]))
+        btn_del.bind("<Button-1>", lambda e, f=folder: (self._delete_folder(f), "break")[1])
+
+    def _add_table_row(self, name: str, indent: int = 0):
         C = self._C
         row = tk.Frame(self.table_inner, bg=C["editor"], cursor="hand2")
         row.pack(fill="x")
@@ -626,8 +839,9 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         btn_ddl = tk.Label(row, text="{ }", bg=C["editor"], fg=C["fg2"],
                            font=("Consolas", 8), padx=4, cursor="hand2")
         btn_ddl.pack(side="right")
+        pad = 10 + indent * 16
         lbl = tk.Label(row, text=name, bg=C["editor"], fg=C["fg"],
-                       font=("Segoe UI", 9), anchor="w", padx=10)
+                       font=("Segoe UI", 9), anchor="w", padx=pad)
         lbl.pack(side="left", fill="x", expand=True)
 
         def on_enter(e, r=row, l=lbl, bd=btn_del, bddl=btn_ddl):
@@ -710,11 +924,12 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
         self.sql_editor.insert("1.0", sql)
         self._show_status(f'"{name}" の定義を表示しました')
 
-    # テーブル名 → SQLエディタ ドラッグ&ドロップ
+    # テーブル → フォルダ ドラッグ&ドロップ
     def _on_table_drag_start(self, event, name: str):
         self._drag_table_name = name
         self._drag_start_pos = (event.x_root, event.y_root)
         self._drag_ghost = None
+        self._drag_over_folder = None
 
     def _on_table_drag_motion(self, event, name: str):
         # 5px以上動いたらゴースト表示
@@ -732,36 +947,77 @@ class App(TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk):
                      padx=6, pady=3).pack()
         self._drag_ghost.wm_geometry(f"+{event.x_root + 12}+{event.y_root + 4}")
 
-        # SQLエディタ上にいるかハイライト
-        ex = self.sql_editor.winfo_rootx()
-        ey = self.sql_editor.winfo_rooty()
-        ew = self.sql_editor.winfo_width()
-        eh = self.sql_editor.winfo_height()
-        if ex <= event.x_root <= ex + ew and ey <= event.y_root <= ey + eh:
-            self.sql_editor.config(highlightthickness=2,
-                                   highlightbackground=self._C["accent"])
-        else:
-            self.sql_editor.config(highlightthickness=0)
+        # ドロップ先フォルダを判定してハイライト
+        target = self._folder_at_y(event.x_root, event.y_root)
+        if target != self._drag_over_folder:
+            self._highlight_folder(self._drag_over_folder, False)
+            self._highlight_folder(target, True)
+            self._drag_over_folder = target
 
     def _on_table_drag_release(self, event, name: str):
         # ゴースト削除
         if self._drag_ghost:
             self._drag_ghost.destroy()
             self._drag_ghost = None
-        self.sql_editor.config(highlightthickness=0)
+        target = self._folder_at_y(event.x_root, event.y_root)
+        self._highlight_folder(self._drag_over_folder, False)
+        self._drag_over_folder = None
 
-        # SQLエディタ上でリリースされたか判定
-        ex = self.sql_editor.winfo_rootx()
-        ey = self.sql_editor.winfo_rooty()
-        ew = self.sql_editor.winfo_width()
-        eh = self.sql_editor.winfo_height()
-        if ex <= event.x_root <= ex + ew and ey <= event.y_root <= ey + eh:
-            # ドロップ位置のテキストインデックスを計算して挿入
-            lx = event.x_root - ex
-            ly = event.y_root - ey
-            idx = self.sql_editor.index(f"@{lx},{ly}")
-            self.sql_editor.insert(idx, name)
-            self.sql_editor.focus_set()
+        # ドラッグしていなければ何もしない(クリック/ダブルクリックに委ねる)
+        dx = abs(event.x_root - self._drag_start_pos[0])
+        dy = abs(event.y_root - self._drag_start_pos[1])
+        if dx < 5 and dy < 5:
+            return
+
+        # サイドバー(TABLESエリア)の外にドロップした場合は無視
+        if not self._is_within_table_area(event.x_root, event.y_root):
+            return
+
+        # target=Noneならルート(フォルダ無し)へ、フォルダ名ならそこへ移動
+        current = self.table_folders.get(name)
+        if target != current:
+            self._move_table_to_folder(name, target)
+            if target:
+                self._show_status(f'"{name}" を "{target}" へ移動しました')
+            else:
+                self._show_status(f'"{name}" をフォルダから外しました')
+
+    def _is_within_table_area(self, x_root: int, y_root: int) -> bool:
+        w = self.table_canvas
+        x = w.winfo_rootx()
+        y = w.winfo_rooty()
+        return x <= x_root <= x + w.winfo_width() and y <= y_root <= y + w.winfo_height()
+
+    def _folder_at_y(self, x_root: int, y_root: int) -> str | None:
+        """ドロップ座標に対応するフォルダ名を返す。ルート領域ならNone。"""
+        if not self._is_within_table_area(x_root, y_root):
+            return None
+        # 各フォルダ見出し行の縦位置レンジで判定
+        best = None
+        for folder, row in getattr(self, "_folder_row_widgets", {}).items():
+            if not row.winfo_exists():
+                continue
+            top = row.winfo_rooty()
+            bottom = top + row.winfo_height()
+            # 見出し行 + その配下領域(次のフォルダ見出しまで)にドロップされたら所属扱い
+            if top <= y_root:
+                if best is None or top > best[1]:
+                    best = (folder, top)
+        if best is None:
+            return None
+        return best[0]
+
+    def _highlight_folder(self, folder: str | None, on: bool):
+        if folder is None:
+            return
+        row = getattr(self, "_folder_row_widgets", {}).get(folder)
+        if not row or not row.winfo_exists():
+            return
+        C = self._C
+        bg = C["accent"] if on else C["surface2"]
+        row.config(bg=bg)
+        for child in row.winfo_children():
+            child.config(bg=bg)
 
     def _on_table_double_click(self, _event):
         pass
